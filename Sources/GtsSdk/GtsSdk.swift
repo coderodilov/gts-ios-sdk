@@ -100,9 +100,36 @@ public final class GtsSdk: @unchecked Sendable {
 
 private extension GtsResponse {
     func extractCookiePairs(baseURL: URL) -> [String: String] {
-        let cookies = HTTPCookie.cookies(withResponseHeaderFields: headers, for: baseURL)
-        return cookies.reduce(into: [String: String]()) { result, cookie in
+        var pairs = HTTPCookie.cookies(withResponseHeaderFields: headers, for: baseURL).reduce(into: [String: String]()) { result, cookie in
             result[cookie.name] = cookie.value
+        }
+        for (key, value) in headers where key.caseInsensitiveCompare("Set-Cookie") == .orderedSame {
+            value.extractCookiePairs().forEach { name, value in
+                pairs[name] = value
+            }
+        }
+        return pairs
+    }
+}
+
+private extension String {
+    func extractCookiePairs() -> [String: String] {
+        let parts = replacingOccurrences(of: "\r\n", with: "\n")
+            .components(separatedBy: "\n")
+            .flatMap { line in
+                line.replacingOccurrences(
+                    of: #",\s*(?=[A-Za-z_][A-Za-z0-9_\-]*=)"#,
+                    with: "\n",
+                    options: .regularExpression
+                )
+                .components(separatedBy: "\n")
+            }
+
+        return parts.reduce(into: [String: String]()) { result, rawPart in
+            let firstPart = rawPart.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: ";").first ?? ""
+            let cookie = firstPart.split(separator: "=", maxSplits: 1).map(String.init)
+            guard cookie.count == 2, !cookie[0].isEmpty, !cookie[1].isEmpty else { return }
+            result[cookie[0]] = cookie[1]
         }
     }
 }

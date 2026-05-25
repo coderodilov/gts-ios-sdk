@@ -106,7 +106,8 @@ final class GtsHttpClient: @unchecked Sendable {
 
 private extension GtsResponse {
     var shouldRetryWithCookieToken: Bool {
-        statusCode >= 500 && compactError.localizedCaseInsensitiveContains("not enough values to unpack")
+        statusCode == 401 ||
+            (statusCode >= 500 && compactError.localizedCaseInsensitiveContains("not enough values to unpack"))
     }
 }
 

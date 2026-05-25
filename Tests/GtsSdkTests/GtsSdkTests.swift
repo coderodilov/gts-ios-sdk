@@ -113,6 +113,69 @@ final class GtsSdkTests: XCTestCase {
         XCTAssertTrue(result.response.isSuccessful)
     }
 
+    func testBearer401RetriesBookingWithAuthCookie() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let urlSession = URLSession(configuration: configuration)
+        var bookingCallCount = 0
+
+        MockURLProtocol.handler = { request in
+            let urlString = request.url?.absoluteString ?? ""
+            if urlString.hasSuffix("/v1/auth/signin/") {
+                return (
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: [
+                            "Content-Type": "application/json",
+                            "Set-Cookie": "esession=session-1; Path=/, token=cookie-token; Path=/"
+                        ]
+                    )!,
+                    Data(#"{"data":{"token":"bearer-token"}}"#.utf8)
+                )
+            }
+            if urlString.hasSuffix("/v1/content/booking/") {
+                bookingCallCount += 1
+                if bookingCallCount == 1 {
+                    XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer bearer-token")
+                    XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
+                    return (
+                        HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!,
+                        Data(#"{"detail":"Unauthorized"}"#.utf8)
+                    )
+                }
+                XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Cookie"), "esession=session-1; token=cookie-token")
+                return (
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: ["Content-Type": "application/json"]
+                    )!,
+                    Data(#"{"data":{"status":"success","data":{"order_number":"12345"}}}"#.utf8)
+                )
+            }
+            XCTFail("Unexpected request URL: \(urlString)")
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!,
+                Data()
+            )
+        }
+
+        let session = try await GtsSdk.authenticate(
+            email: "user@example.com",
+            password: "password",
+            urlSession: urlSession
+        )
+        let response = try await session.sdk.flight.booking(.object(["request_id": .string("request-1")]))
+
+        XCTAssertEqual(bookingCallCount, 2)
+        XCTAssertEqual(response.authMode, "Cookie")
+        XCTAssertTrue(response.isSuccessful)
+    }
+
     func testPollOffersFetchesNextTokenAndAccumulatesOffers() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
