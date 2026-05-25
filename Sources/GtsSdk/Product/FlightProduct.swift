@@ -19,6 +19,13 @@ public struct FlightOffersResult: Sendable {
     }
 }
 
+public struct FlightUpsellResult: Sendable {
+    public let response: GtsResponse
+    public let status: String?
+    public let message: String?
+    public let offers: [FlightOfferSummary]
+}
+
 public struct FlightOfferSummary: Identifiable, Sendable {
     public let id: String
     public let route: String
@@ -144,6 +151,16 @@ public final class FlightProduct: @unchecked Sendable {
 
     public func upsell(requestId: String, offerId: String) async throws -> GtsResponse {
         try await client.post(path: "v1/content/upsell/", body: requestIdOfferBody(requestId: requestId, offerId: offerId))
+    }
+
+    public func upsellOffers(requestId: String, offerId: String) async throws -> FlightUpsellResult {
+        let response = try await upsell(requestId: requestId, offerId: offerId)
+        return FlightUpsellResult(
+            response: response,
+            status: response.json?.findStringDataFirst("status"),
+            message: response.json?.findStringDataFirst("message"),
+            offers: response.json?.findArrayDataFirst("offers")?.mapOffers() ?? []
+        )
     }
 
     public func rules(requestId: String, offerId: String) async throws -> GtsResponse {
